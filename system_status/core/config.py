@@ -23,6 +23,8 @@ _COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 # Kinds whose values mean nothing when added up, so a stacked graph can't show them.
 UNSTACKABLE = {Kind.TEMP, Kind.VOLTAGE, Kind.FREQUENCY}
 GRAPH_TYPES = ("line", "heatmap")
+# hide_zero = "device": hide a device's series together, only when all of them were 0.
+HIDE_ZERO_DEVICE = "device"
 
 
 class ConfigError(ValueError):
@@ -44,7 +46,8 @@ class GraphConfig:
     series: tuple[str, ...]
     legend: bool = True
     # Leave out series that were 0 for the whole visible history, such as unplugged fan headers.
-    hide_zero: bool = False
+    # "device" leaves out a device's series only when all of them were 0, see layout.py.
+    hide_zero: bool | str = False
     # Draw the series as filled areas on top of each other; the top edge is their total.
     stacked: bool = False
     # Keep only series of this kind; by default the kind of the first matched series.
@@ -198,7 +201,7 @@ def _parse_graph(raw: Any, where: str) -> GraphConfig:
         title=_get(raw, "title", str, where) if "title" in raw else "",
         series=tuple(series),
         legend=_get(raw, "legend", bool, where) if "legend" in raw else True,
-        hide_zero=_get(raw, "hide_zero", bool, where) if "hide_zero" in raw else False,
+        hide_zero=_parse_hide_zero(raw, where),
         stacked=stacked,
         kind=kind,
         min=bounds.get("min"),
@@ -212,6 +215,17 @@ def _parse_graph(raw: Any, where: str) -> GraphConfig:
         right_max=bounds.get("right_max"),
         right_title=_get(raw, "right_title", str, where) if "right_title" in raw else None,
     )
+
+
+def _parse_hide_zero(raw: Mapping[str, Any], where: str) -> bool | str:
+    if "hide_zero" not in raw:
+        return False
+    value = _get(raw, "hide_zero", (bool, str), where)
+    if isinstance(value, str) and value != HIDE_ZERO_DEVICE:
+        raise ConfigError(
+            f'{where}.hide_zero: expected true, false or "{HIDE_ZERO_DEVICE}", got {value!r}'
+        )
+    return value
 
 
 def _parse_kind(raw: Mapping[str, Any], key: str, where: str) -> Kind | None:
@@ -317,7 +331,9 @@ DUMP_HEADER = """\
 #   "hwmon:k10temp/Tctl" = { label = "CPU package", color = "#e01b24" }
 #   "hwmon:nct6687/fan11" = { hidden = true }
 #
-# Graph keys: title, series, legend (true/false), hide_zero, stacked (areas on top of each
+# Graph keys: title, series, legend (true/false), hide_zero (true: leave out series that were 0
+# the whole visible time; "device": leave out a device's series, e.g. a disk's read and write,
+# only when all of them were 0, and show all of them otherwise), stacked (areas on top of each
 # other, the top edge is the total; one kind only, not temp, voltage or frequency), type ("line"
 # or "heatmap": a row per series coloured by value, e.g. "cpu:pcore*"), row_height (heatmap
 # row, pixels), kind (percent, temp, fan, power, rate, voltage, frequency), min, max, height
@@ -365,7 +381,9 @@ def dump_config(config: Config) -> str:
                 lines.append("  ]")
             if not graph.legend:
                 lines.append("  legend = false")
-            if graph.hide_zero:
+            if graph.hide_zero == HIDE_ZERO_DEVICE:
+                lines.append(f"  hide_zero = {_string(HIDE_ZERO_DEVICE)}")
+            elif graph.hide_zero:
                 lines.append("  hide_zero = true")
             if graph.stacked:
                 lines.append("  stacked = true")

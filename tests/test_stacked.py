@@ -99,7 +99,7 @@ def test_default_layout_has_one_stacked_disk_throughput_graph():
 
     assert [g.title for g in disks.graphs] == ["Temperature", "Throughput"]
     throughput = disks.graphs[1]
-    assert throughput.stacked and throughput.hide_zero
+    assert throughput.stacked and throughput.hide_zero == "device"
     assert throughput.series == (
         "disk:WD/read",
         "disk:WD/write",

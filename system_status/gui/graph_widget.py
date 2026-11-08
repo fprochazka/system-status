@@ -20,7 +20,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from system_status.core.axis import aligned_range, axis_range, stack_values
-from system_status.core.layout import ResolvedGraph, assign_colors
+from system_status.core.layout import ResolvedGraph, assign_colors, zero_hidden
 from system_status.core.series import Kind, format_axis, format_value
 from system_status.core.snapshot import Catalog, Snapshot
 from system_status.gui.theme import SERIES_COLORS, Theme
@@ -73,10 +73,6 @@ class Line:
     right: bool = False
 
 
-def _all_zero(values: tuple[float, ...]) -> bool:
-    return all(math.isnan(v) or v == 0 for v in values)
-
-
 def shade_color(base: QColor, shade: int) -> QColor:
     """Return ``base`` mixed towards white: shade 0 is ``base``, each next shade lighter."""
     if shade <= 0:
@@ -95,13 +91,17 @@ def build_lines(graph: ResolvedGraph, snapshot: Snapshot | None) -> list[Line]:
     Default colours come from ``assign_colors``: per disk, the same in every graph, and by
     position for everything else. A colour set in ``[sensors]`` wins.
     """
-    shown = []
     sides = [(s, False) for s in graph.series] + [(s, True) for s in graph.right_series]
-    for series, right in sides:
-        values = snapshot.values.get(series.info.id, ()) if snapshot else ()
-        if graph.config.hide_zero and _all_zero(values):
-            continue
-        shown.append((series, values, right))
+    all_values = {
+        series.info.id: snapshot.values.get(series.info.id, ()) if snapshot else ()
+        for series, _right in sides
+    }
+    hidden = zero_hidden(all_values, graph.config.hide_zero)
+    shown = [
+        (series, all_values[series.info.id], right)
+        for series, right in sides
+        if series.info.id not in hidden
+    ]
     every = graph.series + graph.right_series
     catalog = snapshot.catalog if snapshot else Catalog(tuple(s.info for s in every))
     colors = assign_colors([series.info.id for series, _, _ in shown], catalog)

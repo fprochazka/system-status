@@ -1,11 +1,13 @@
 """From config to what the window draws: the default layout, and series patterns to series."""
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 
 from system_status.core.config import (
+    HIDE_ZERO_DEVICE,
     UNSTACKABLE,
     Config,
     GraphConfig,
@@ -110,6 +112,39 @@ def right_title(graph: ResolvedGraph) -> str | None:
     if len(series) == 1 and len(series[0].label) <= MAX_RIGHT_TITLE_LABEL:
         return series[0].label
     return KIND_TITLES[graph.right_kind] if graph.right_kind is not None else None
+
+
+def zero_device(series_id: str) -> str:
+    """Return the device a series belongs to for ``hide_zero = "device"``: its ID up to the
+    last ``/``, such as ``disk:WD_Red_SN700_2000GB``; an ID without ``/`` is its own device."""
+    device, slash, _metric = series_id.rpartition("/")
+    return device if slash else series_id
+
+
+def zero_hidden(values: Mapping[str, Sequence[float]], mode: bool | str) -> set[str]:
+    """Return the IDs that ``hide_zero`` leaves out, given each series' visible values.
+
+    A series is zero when every visible value is 0 or missing. With ``True`` each zero series
+    is left out on its own; with ``"device"`` a device's series are left out together, and only
+    when all of them are zero.
+    """
+
+    def zero(series: Sequence[float]) -> bool:
+        return all(math.isnan(v) or v == 0 for v in series)
+
+    if not mode:
+        return set()
+    if mode != HIDE_ZERO_DEVICE:
+        return {series_id for series_id, series in values.items() if zero(series)}
+    groups: dict[str, list[str]] = {}
+    for series_id in values:
+        groups.setdefault(zero_device(series_id), []).append(series_id)
+    return {
+        series_id
+        for members in groups.values()
+        if all(zero(values[member]) for member in members)
+        for series_id in members
+    }
 
 
 def _match(
@@ -239,7 +274,13 @@ def default_sections(catalog: Catalog) -> tuple[SectionConfig, ...]:
     section(
         "Disks",
         GraphConfig("Temperature", _ids(series, "disk-temp")),
-        GraphConfig("Throughput", _disk_throughput(series), hide_zero=True, stacked=True),
+        GraphConfig(
+            "Throughput",
+            _disk_throughput(series),
+            # An active disk shows both read and write; an idle one neither.
+            hide_zero=HIDE_ZERO_DEVICE,
+            stacked=True,
+        ),
     )
     section("Fans", GraphConfig("Speed", _ids(series, "fan"), hide_zero=True))
     section("Network", GraphConfig("Throughput", _ids(series, "net")))
