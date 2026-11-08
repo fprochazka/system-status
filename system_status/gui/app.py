@@ -11,7 +11,7 @@ from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication
 
 from system_status.core.config import Config, ConfigError, load_config
-from system_status.core.layout import effective_sections, resolve_graph
+from system_status.core.layout import effective_sections, resolve_graph, unmatched_sensors
 from system_status.core.sampler import Sampler
 from system_status.core.sources.base import Source
 from system_status.gui import launcher
@@ -55,9 +55,10 @@ class GuiApp:
         apply_theme(qt_app, self.theme)
         self.sampler = self._new_sampler(self.config)
         self.layout_error: str | None = None
+        self.layout_warning: str | None = None
         self.window = MainWindow(self.theme)
         self._apply_layout()
-        self.window.show_error(error or self.layout_error)
+        self.window.show_messages(error or self.layout_error, self.layout_warning)
         self._last_shown: float | None = None
 
         self.timer = QTimer()
@@ -104,15 +105,21 @@ class GuiApp:
             sections.append((section.title, section.collapsed, graphs))
         self.window.set_layout(sections)
         self.layout_error = "; ".join(errors) or None
+        unknown = unmatched_sensors(self.config, catalog)
+        self.layout_warning = (
+            f"[sensors] has overrides for IDs that no series has, ignored: {', '.join(unknown)}"
+            if unknown
+            else None
+        )
 
     def reload(self) -> None:
         self._watch()
         try:
             config = load_config(self.config_path)
         except ConfigError as error:
-            self.window.show_error(str(error))
+            self.window.show_messages(str(error), self.layout_warning)
             return
-        self.window.show_error(self.layout_error)
+        self.window.show_messages(self.layout_error, self.layout_warning)
         if config == self.config:
             return
         restart = (config.history_seconds, config.interval_seconds) != (
@@ -129,7 +136,7 @@ class GuiApp:
         if theme_changed:
             self._set_theme()
         self._apply_layout()
-        self.window.show_error(self.layout_error)
+        self.window.show_messages(self.layout_error, self.layout_warning)
         self.refresh()
 
     def _set_theme(self) -> None:

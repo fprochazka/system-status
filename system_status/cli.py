@@ -16,7 +16,7 @@ from system_status.core.config import (
     get_default_config_path,
     load_config,
 )
-from system_status.core.layout import default_sections, unmatched_patterns
+from system_status.core.layout import default_sections, unmatched_patterns, unmatched_sensors
 from system_status.core.sampler import Sampler, build_sources
 from system_status.core.series import format_value
 from system_status.gui import launcher
@@ -69,6 +69,17 @@ RemoveDesktopEntryOption = Annotated[
 ]
 
 
+# The options that each command takes, so ``--config`` or ``--theme`` given before a command
+# name passes on to that command, and is refused where the command has no use for it.
+GLOBAL_OPTIONS = {
+    "gui": {"config", "theme"},
+    "sensors": {"config"},
+    "dump-config": {"config"},
+    "screenshot": {"config", "theme"},
+    "version": set(),
+}
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -78,16 +89,31 @@ def main(
     remove_desktop_entry: RemoveDesktopEntryOption = False,
 ) -> None:
     """Without a command, open the window."""
-    if ctx.invoked_subcommand is None:
+    ctx.obj = {"config": config, "theme": theme}
+    command = ctx.invoked_subcommand
+    if command is None:
         gui(
+            ctx,
             config=config,
             theme=theme,
             install_desktop_entry=install_desktop_entry,
             remove_desktop_entry=remove_desktop_entry,
         )
-    elif install_desktop_entry or remove_desktop_entry:
+        return
+    if install_desktop_entry or remove_desktop_entry:
         typer.echo("Error: --install-desktop-entry and --remove-desktop-entry take no command")
         raise typer.Exit(2)
+    for name, value in (("config", config), ("theme", theme)):
+        if value is not None and name not in GLOBAL_OPTIONS.get(command, set()):
+            typer.echo(f"Error: {command} doesn't take --{name}")
+            raise typer.Exit(2)
+
+
+def _inherit(ctx: typer.Context, name: str, value):
+    """Return the command's own option value, or else the one given before the command name."""
+    if value is not None:
+        return value
+    return (ctx.obj or {}).get(name) if isinstance(ctx.obj, dict) else None
 
 
 def start_gui(config_path: Path, theme: str | None) -> int:
@@ -99,12 +125,15 @@ def start_gui(config_path: Path, theme: str | None) -> int:
 
 @app.command()
 def gui(
+    ctx: typer.Context,
     config: ConfigOption = None,
     theme: ThemeOption = None,
     install_desktop_entry: InstallDesktopEntryOption = False,
     remove_desktop_entry: RemoveDesktopEntryOption = False,
 ) -> None:
     """Open the window."""
+    config = _inherit(ctx, "config", config)
+    theme = _inherit(ctx, "theme", theme)
     # --theme only applies to the window, which the desktop entry options don't open.
     options = {
         "--theme": theme is not None,
@@ -149,15 +178,16 @@ def gui(
 
 @app.command()
 def sensors(
+    ctx: typer.Context,
     config: ConfigOption = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON instead of a table.")] = False,
 ) -> None:
     """List every series of this machine: ID, label, current value, and why it is hidden.
 
     Labels include the overrides of the settings file. Afterwards, list the patterns of the
-    settings file that match no series.
+    settings file that match no series, and the [sensors] overrides for IDs that no series has.
     """
-    path = _config_path(config)
+    path = _config_path(_inherit(ctx, "config", config))
     try:
         settings = load_config(path)
     except ConfigError as error:
@@ -189,8 +219,10 @@ def sensors(
             }
         )
     missing = unmatched_patterns(settings, sampler.catalog)
+    unknown = unmatched_sensors(settings, sampler.catalog)
     if as_json:
-        print(json.dumps({"series": rows, "unmatched_patterns": missing}, indent=2))
+        result = {"series": rows, "unmatched_patterns": missing, "unmatched_sensors": unknown}
+        print(json.dumps(result, indent=2))
         return
     id_width = max(len(row["id"]) for row in rows) if rows else 10
     label_width = max(len(row["label"]) for row in rows) if rows else 10
@@ -203,10 +235,15 @@ def sensors(
         print(f"\nPatterns in {path} that match no series:", file=sys.stderr)
         for pattern in missing:
             print(f"  {pattern}", file=sys.stderr)
+    if unknown:
+        print(f"\n[sensors] overrides in {path} for IDs that no series has:", file=sys.stderr)
+        for series_id in unknown:
+            print(f"  {series_id}", file=sys.stderr)
 
 
 @app.command("dump-config")
 def dump_config_command(
+    ctx: typer.Context,
     config: ConfigOption = None,
     write: Annotated[
         bool, typer.Option("--write", help="Write to the settings file instead of stdout.")
@@ -217,7 +254,7 @@ def dump_config_command(
 
     History, theme and sensor overrides come from the current settings file, if there is one.
     """
-    path = _config_path(config)
+    path = _config_path(_inherit(ctx, "config", config))
     try:
         settings = load_config(path)
     except ConfigError as error:
@@ -248,6 +285,7 @@ def dump_config_command(
 
 @app.command()
 def screenshot(
+    ctx: typer.Context,
     output: Annotated[Path, typer.Argument(help="PNG file to write.")],
     config: ConfigOption = None,
     theme: ThemeOption = None,
@@ -258,6 +296,8 @@ def screenshot(
 
     Useful to check a layout after editing the settings file, without opening a window.
     """
+    config = _inherit(ctx, "config", config)
+    theme = _inherit(ctx, "theme", theme)
     _check_theme(theme)
     from system_status.gui.app import render_screenshot
 

@@ -204,6 +204,16 @@ def unmatched_patterns(config: Config, catalog: Catalog) -> list[str]:
     return missing
 
 
+def unmatched_sensors(config: Config, catalog: Catalog) -> list[str]:
+    """Return the IDs in ``[sensors]`` that no series of this machine has.
+
+    Overrides are exact IDs, never globs. An unknown one may be a typo, or a device that is
+    absent for now, such as an unplugged disk, so it is worth a warning, not an error.
+    """
+    ids = {info.id for info in catalog.series}
+    return [series_id for series_id in config.sensors if series_id not in ids]
+
+
 def _ids(series: Sequence[SeriesInfo], group: str, kind: Kind | None = None) -> tuple[str, ...]:
     return tuple(
         info.id

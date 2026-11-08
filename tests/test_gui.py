@@ -241,3 +241,24 @@ def test_all_graphs_share_the_plot_x_range(qt_app, machine, tmp_path):
     finally:
         app.sampler.close()
         app.window.close()
+
+
+def test_unknown_override_is_a_warning_and_the_layout_applies(qt_app, machine, tmp_path):
+    path = tmp_path / "settings.toml"
+    path.write_text(
+        CONFIG.replace("[sensors]\n", '[sensors]\n"disk:Gone/temp" = { label = "x" }\n')
+    )
+    app = _make_app(qt_app, machine, path)
+    try:
+        assert [s.header.title for s in app.window.sections] == ["CPU", "Fans"]
+        assert app.window.banner.isVisibleTo(app.window)
+        assert app.window.banner.text().startswith("Warning: ")
+        assert "disk:Gone/temp" in app.window.banner.text()
+        assert not app.window._banner_is_error
+
+        path.write_text(CONFIG)
+        app.reload()
+        assert not app.window.banner.isVisibleTo(app.window)
+    finally:
+        app.sampler.close()
+        app.window.close()

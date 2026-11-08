@@ -42,6 +42,8 @@ class Theme:
     accent: QColor
     error_background: QColor
     error_text: QColor
+    warning_background: QColor
+    warning_text: QColor
 
 
 LIGHT = Theme(
@@ -55,6 +57,8 @@ LIGHT = Theme(
     accent=QColor("#3584e4"),
     error_background=QColor("#f9dcdf"),
     error_text=QColor("#a51d2d"),
+    warning_background=QColor("#fdf0cc"),
+    warning_text=QColor("#7a5900"),
 )
 
 DARK = Theme(
@@ -68,6 +72,8 @@ DARK = Theme(
     accent=QColor("#78aeed"),
     error_background=QColor("#5c1d24"),
     error_text=QColor("#ffbec5"),
+    warning_background=QColor("#4d3b10"),
+    warning_text=QColor("#f8e45c"),
 )
 
 

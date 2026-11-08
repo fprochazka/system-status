@@ -111,13 +111,13 @@ Options:
 | `--theme` | window, `gui`, `screenshot` | `auto`, `light` or `dark`; overrides `theme` from the settings file |
 | `--install-desktop-entry` | window, `gui` | Install the launcher and the icon, then exit. See [Application launcher](#application-launcher) |
 | `--remove-desktop-entry` | window, `gui` | Remove the launcher and the icon, then exit |
-| `--json` | `sensors` | Print `{"series": [...], "unmatched_patterns": [...]}` instead of a table |
+| `--json` | `sensors` | Print `{"series": [...], "unmatched_patterns": [...], "unmatched_sensors": [...]}` instead of a table |
 | `--write`, `--force` | `dump-config` | Write to the settings file instead of printing; `--force` overwrites an existing file |
 | `--seconds`, `--width` | `screenshot` | How long to sample before the picture (default 5), and the window width in pixels (default 760) |
 
-`--theme`, `--install-desktop-entry` and `--remove-desktop-entry` exclude each other. "window" means `system-status` without a command. Options before a command name apply only to the window: `system-status --config x.toml sensors` ignores `--config`, so write `system-status sensors --config x.toml`.
+`--theme`, `--install-desktop-entry` and `--remove-desktop-entry` exclude each other. "window" means `system-status` without a command. `--config` and `--theme` work before or after a command name: `system-status --config x.toml sensors` is the same as `system-status sensors --config x.toml`. When both are given, the one after the command name wins. An option that the command doesn't take, such as `--theme` before `sensors`, is an error.
 
-`sensors` samples twice, one second apart, because rates need two samples, then prints one line per series. Afterwards, it lists on stderr the `series` and `right` patterns of the settings file that match no series of this machine. It is the tool to find IDs for the settings file.
+`sensors` samples twice, one second apart, because rates need two samples, then prints one line per series. Afterwards, it lists on stderr the `series` and `right` patterns of the settings file that match no series of this machine, and the `[sensors]` overrides for IDs that no series has. It is the tool to find IDs for the settings file.
 
 `dump-config` takes `history_seconds`, `interval_seconds`, `theme` and `[sensors]` from the current settings file and adds the generated default sections. Use it as a starting point for your own layout.
 
@@ -174,6 +174,8 @@ The window watches the file and reloads it about 0.2 seconds after it changes, a
 
 A problem found while matching series, such as a stacked graph whose patterns match several kinds, also shows in the banner.
 
+An override in `[sensors]` for an ID that no series has shows a yellow warning in the banner, and the rest of the settings apply. It may be a typo, or a device that is absent for now, such as an unplugged disk.
+
 ### Top-level keys
 
 | Key | Default | Meaning |
@@ -184,7 +186,7 @@ A problem found while matching series, such as a stacked graph whose patterns ma
 
 ### `[sensors]`
 
-Overrides for single series, by exact ID, wherever the series is shown:
+Overrides for single series, wherever the series is shown. The keys are exact IDs, not globs; an ID that no series has gets a [warning](#validation-and-reloading).
 
 ```toml
 [sensors]

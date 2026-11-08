@@ -53,12 +53,17 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.scroll)
         self.setCentralWidget(central)
         self.content: QWidget | None = None
+        # Whether the banner shows an error (True) or only a warning; picks its colors.
+        self._banner_is_error = True
         self._style_banner()
 
     def _style_banner(self) -> None:
         theme = self.theme
+        error = self._banner_is_error
+        background = theme.error_background if error else theme.warning_background
+        text = theme.error_text if error else theme.warning_text
         self.banner.setStyleSheet(
-            f"background: {theme.error_background.name()}; color: {theme.error_text.name()};"
+            f"background: {background.name()}; color: {text.name()};"
             f" padding: 10px {CONTENT_MARGIN}px;"
         )
 
@@ -66,12 +71,25 @@ class MainWindow(QMainWindow):
         self.theme = theme
         self._style_banner()
 
-    def show_error(self, message: str | None) -> None:
-        if message:
-            self.banner.setText(f"Settings not applied: {message}")
-            self.banner.show()
-        else:
+    def show_messages(self, error: str | None, warning: str | None = None) -> None:
+        """Show an error, a warning, both or neither above the graphs.
+
+        An error means the settings were not applied, and the banner has the error colors. A
+        warning alone, such as an override for an absent disk, gets the calmer warning colors:
+        the settings apply, but something in them matches nothing.
+        """
+        lines = []
+        if error:
+            lines.append(f"Settings not applied: {error}")
+        if warning:
+            lines.append(f"Warning: {warning}")
+        if not lines:
             self.banner.hide()
+            return
+        self._banner_is_error = bool(error)
+        self._style_banner()
+        self.banner.setText("\n".join(lines))
+        self.banner.show()
 
     def set_layout(self, sections: Sequence[tuple[str, bool, Sequence[ResolvedGraph]]]) -> None:
         """Replace every section with ``(title, collapsed, graphs)`` built from the config."""
