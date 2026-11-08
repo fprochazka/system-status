@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Claude Code
+/.claude/settings.local.json
+/.claude/plans/
+
+# Testing
+.pytest_cache/
+.ruff_cache/
